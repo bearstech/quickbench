@@ -1,0 +1,139 @@
+#!/bin/bash
+
+# quickbench - Quick Linux-based server benchmark
+# Copyright (C) 2025 Bearstech - https://bearstech.com/
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+THIS_VERSION=1.0
+
+shopt -s extglob
+
+loop_time=${1:-30}  # Should be at least 30(s) to be statistically meaningful
+
+
+# Plain busy-loop, outputs loop/s
+cpu_loop() {
+  trap ':' SIGINT
+  (trap "echo \$((n/$loop_time))" EXIT; n=0; while [[ 1 ]]; do let n++; done) &
+  sleep "$loop_time"
+  kill $!
+}
+
+io_stat() {
+  dev="$1"
+  # See https://www.kernel.org/doc/Documentation/block/stat.txt
+  _time=${EPOCHREALTIME/./}  # In micro-seconds
+  read -r _rio _rmrg _rsct _rtck _wio _wmrg _wsct _wtck _cur _run _qud _dio _dmrg _dsct _dtck < "/sys/block/$dev/stat"
+}
+
+io_bench() {
+  title="$1"; shift
+  # Next args are the benchmark'ed IO command
+
+  io_stat "$fsdev"
+  _t0=$_time
+  _io0=$((_rio+_wio))
+  _sct0=$((_rsct+_wsct))
+  _q0=$_qud
+
+  # Run that many IO jobs in  //, at most $loop_tim per job, make them interruptible
+  for ((i=0; i<p; i++)) {
+    (trap ':' SIGINT;
+     "$@" &
+     sleep $loop_time;
+     kill $! 2>/dev/null) &
+    sleep 1  # new jobs are started every second
+  }
+  wait
+
+  io_stat "$fsdev"
+  _t=$((_time - _t0))
+  _io=$((_rio+_wio - _io0))
+  _sct=$((_rsct+_wsct - _sct0))
+  _q=$((_qud - _q0))
+
+  io=$((10**6 * _io / _t))  # From /us to /s
+  lat=$((_q / _io))
+  bw=$((10**6 * _sct / 1953 / _t))  # From /us to /s and 512-bytes sectors to MB (not MiB)
+  printf "%-6s (%2d thread[s]): %6d MB/s  %6d IO/s  %6d µs avg. lat.\n" "$title" "$p" "$bw" "$io" "$lat"
+}
+
+bash=$(bash --version)
+dd=$(dd --version)
+echo "Quickbench: $THIS_VERSION"
+echo "Kernel    : $(uname -a)"
+echo "Bash      : ${bash/$'\n'*/}"
+echo "dd        : ${dd/$'\n'*/}"
+echo
+
+echo "[ CPU info ]"
+lscpu |grep -E 'Model name|Thread|Core|Socket'
+
+echo
+echo "[ CPU loop ]"
+ncpu=$(grep -c ^processor /proc/cpuinfo)
+for ((p=1; p<=ncpu; p+=p)) {
+  values=$(for ((i=0; i<p; i++)) { cpu_loop & })
+  avg=$(( (${values//$'\n'/+})/$p ))
+  printf "%2d // jobs : %10d loop/job/s\n" "$p" "$avg"
+}
+
+echo
+echo "[ Memory ]"
+memtotal=$(sed -nE 's/\MemTotal: *(.*) kB/\1/p' /proc/meminfo)
+echo "Total    : $((memtotal>>10)) MB"
+membw=$(trap ':' INT; dd if=/dev/zero of=/dev/null bs=1M 2>&1 & sleep $loop_time; kill -USR1 $!; sleep .5; kill $!)
+membw="${membw##*, }"
+echo "Bandwidth: $membw"
+
+echo
+echo "[ Storage info ]"
+echo "Name      Bus     Size(GB)  QDepth  Model"
+for d in /sys/block/*/device; do
+  d="${d%/device}"
+  name="${d##*/}"
+  driver=$(readlink $d/device/subsystem); driver="${driver##*/}"
+  size=$(cat $d/size)
+  depth=$(cat $d/device/queue_depth 2>/dev/null || echo '?')
+  model=$(cat $d/device/model 2>/dev/null || echo '?')
+  printf "%-8s  %-6s  %7d   %6s  %s\n" "$name" "$driver" "$((size>>21))" "$depth" "$model"
+done
+
+# We benchmark IOs through the fs we're sitting on, figure out which device it is.
+fspart=$(stat -c %Hd:%Ld .)  # ex: 254:1
+fsdev=$(grep -l "^$fspart\$" /sys/block/*/dev /sys/block/*/*/dev |head -n1)  # ex: /sys/block/vda/vda1/dev
+fsdev="${fsdev##/sys/block/}"
+fsdev="${fsdev%%/*}"
+fsdev="${fsdev:-?}"
+
+# Yes, all IO threads read/write from the same file. This is :
+# - useful: it requires way less disk space
+# - interesting: by reusing already allocated file blocks, we might avoid
+#   to benchmark the fs allocation logic
+# - working: as long as threads don't read/write on the same block at the same
+#   time, otherwise cache effect kicks in (hence the sleep-delay to start IO
+#   threads at a given interal)
+trap 'rm -f dummy' EXIT
+
+for bsize in 4k 1M; do
+  echo
+  echo "[ Storage bandwidth - $bsize blocks ($fsdev) ]"
+  for p in 1 4 16; do
+    io_bench "Writes" dd bs=$bsize status=none if=/dev/zero of=dummy oflag=direct conv=notrunc,fdatasync 
+  done
+  for p in 1 4 16; do
+    io_bench "Reads"  dd bs=$bsize status=none if=dummy of=/dev/null iflag=direct
+  done
+done
