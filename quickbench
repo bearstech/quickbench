@@ -40,6 +40,7 @@ io_stat() {
 
 io_bench() {
   title="$1"; shift
+  jobs="$1"; shift
   # Next args are the benchmark'ed IO command
 
   io_stat "$fsdev"
@@ -49,7 +50,7 @@ io_bench() {
   _q0=$_qud
 
   # Run that many IO jobs in  //, at most $loop_tim per job, make them interruptible
-  for ((i=0; i<p; i++)) {
+  for ((i=0; i<$jobs; i++)) {
     (trap ':' SIGINT;
      "$@" &
      sleep $loop_time;
@@ -67,7 +68,7 @@ io_bench() {
   io=$((10**6 * _io / _t))  # From /us to /s
   lat=$((_q / _io))
   bw=$((10**6 * _sct / 1953 / _t))  # From /us to /s and 512-bytes sectors to MB (not MiB)
-  printf "%-6s (%2d thread[s]): %6d MB/s  %6d IO/s  %6d µs avg. lat.\n" "$title" "$p" "$bw" "$io" "$lat"
+  printf "%-6s (%2d thread[s]): %6d MB/s  %6d IO/s  %6d µs avg. lat.\n" "$title" "$jobs" "$bw" "$io" "$lat"
 }
 
 bash=$(bash --version)
@@ -84,10 +85,10 @@ lscpu |grep -E 'Model name|Thread|Core|Socket'
 echo
 echo "[ CPU loop ]"
 ncpu=$(grep -c ^processor /proc/cpuinfo)
-for ((p=1; p<=ncpu; p+=p)) {
-  values=$(for ((i=0; i<p; i++)) { cpu_loop & })
-  avg=$(( (${values//$'\n'/+})/$p ))
-  printf "%2d // jobs : %10d loop/job/s\n" "$p" "$avg"
+for ((j=1; j<=ncpu; j+=j)) {
+  values=$(for ((i=0; i<j; i++)) { cpu_loop & })
+  avg=$(( (${values//$'\n'/+})/$j ))
+  printf "%2d // jobs : %10d loop/job/s\n" "$j" "$avg"
 }
 
 echo
@@ -130,10 +131,10 @@ trap 'rm -f dummy' EXIT
 for bsize in 4k 1M; do
   echo
   echo "[ Storage bandwidth - $bsize blocks ($fsdev) ]"
-  for p in 1 4 16; do
-    io_bench "Writes" dd bs=$bsize status=none if=/dev/zero of=dummy oflag=direct conv=notrunc,fdatasync 
+  for j in 1 4 16; do
+    io_bench "Writes" "$j" dd bs=$bsize status=none if=/dev/zero of=dummy oflag=direct conv=notrunc,fdatasync 
   done
   for p in 1 4 16; do
-    io_bench "Reads"  dd bs=$bsize status=none if=dummy of=/dev/null iflag=direct
+    io_bench "Reads"  "$j" dd bs=$bsize status=none if=dummy of=/dev/null iflag=direct
   done
 done
