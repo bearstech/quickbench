@@ -134,7 +134,7 @@ for bsize in 4k 1M; do
   for j in 1 4 16; do
     io_bench "Writes" "$j" dd bs=$bsize status=none if=/dev/zero of=dummy oflag=direct conv=notrunc,fdatasync 
   done
-  for p in 1 4 16; do
+  for j in 1 4 16; do
     io_bench "Reads"  "$j" dd bs=$bsize status=none if=dummy of=/dev/null iflag=direct
   done
 done
