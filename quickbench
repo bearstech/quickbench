@@ -117,7 +117,10 @@ fspart=$(stat -c %Hd:%Ld .)  # ex: 254:1
 fsdev=$(grep -l "^$fspart\$" /sys/block/*/dev /sys/block/*/*/dev |head -n1)  # ex: /sys/block/vda/vda1/dev
 fsdev="${fsdev##/sys/block/}"
 fsdev="${fsdev%%/*}"
-fsdev="${fsdev:-?}"
+if [ -z "$fsdev" ]; then
+  echo "Could not figure out the backing blockdevice for $(pwd), sorry" <&2
+  exit 1
+fi
 
 # Yes, all IO threads read/write from the same file. This is :
 # - useful: it requires way less disk space
