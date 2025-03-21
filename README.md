@@ -35,7 +35,7 @@ Bandwidth: 22.0 GB/s
 Name      Bus     Size(GB)  QDepth  Model
 sda       scsi        100      128  QEMU HARDDISK   
 
-[ Storage bandwidth - 4k blocks (sda) ]
+[ Storage bandwidth - 4k blocks ]
 Writes ( 1 thread[s]):     50 MB/s   12314 IO/s       0 µs avg. lat.
 Writes ( 4 thread[s]):    151 MB/s   36998 IO/s       0 µs avg. lat.
 Writes (16 thread[s]):    156 MB/s   38115 IO/s       0 µs avg. lat.
@@ -43,7 +43,7 @@ Reads  ( 1 thread[s]):     50 MB/s   12313 IO/s       0 µs avg. lat.
 Reads  ( 4 thread[s]):    136 MB/s   33262 IO/s       0 µs avg. lat.
 Reads  (16 thread[s]):    156 MB/s   38188 IO/s       0 µs avg. lat.
 
-[ Storage bandwidth - 1M blocks (sda) ]
+[ Storage bandwidth - 1M blocks ]
 Writes ( 1 thread[s]):   1450 MB/s    1384 IO/s       0 µs avg. lat.
 Writes ( 4 thread[s]):   1483 MB/s    1415 IO/s       2 µs avg. lat.
 Writes (16 thread[s]):   1480 MB/s    1611 IO/s       7 µs avg. lat.

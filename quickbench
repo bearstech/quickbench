@@ -113,13 +113,15 @@ for d in /sys/block/*/device; do
 done
 
 # We benchmark IOs through the fs we're sitting on, figure out which device it is.
-fspart=$(stat -c %Hd:%Ld .)  # ex: 254:1
-fsdev=$(grep -l "^$fspart\$" /sys/block/*/dev /sys/block/*/*/dev |head -n1)  # ex: /sys/block/vda/vda1/dev
-fsdev="${fsdev##/sys/block/}"
-fsdev="${fsdev%%/*}"
+fsdev="$(readlink $(findmnt -cfn -o SOURCE -T .))"  # thanks @BlackLotus
+fsdev="${fsdev##*/}"
 if [ -z "$fsdev" ]; then
-  echo "Could not figure out the backing blockdevice for $(pwd), sorry" <&2
+  echo "Could not figure out the backing block device for $(pwd), sorry" <&2
   exit 1
+fi
+if [[ "$fsdev" =~ ^dm- ]]; then
+  echo -e "\n[ Storage device stack ]"
+  lsblk -o NAME,SIZE,TYPE,MOUNTPOINT -s "/dev/$fsdev"
 fi
 
 # Yes, all IO threads read/write from the same file. This is :
@@ -133,7 +135,7 @@ trap 'rm -f dummy' EXIT
 
 for bsize in 4k 1M; do
   echo
-  echo "[ Storage bandwidth - $bsize blocks ($fsdev) ]"
+  echo "[ Storage bandwidth - $bsize blocks ]"
   for j in 1 4 16; do
     io_bench "Writes" "$j" dd bs=$bsize status=none if=/dev/zero of=dummy oflag=direct conv=notrunc,fdatasync 
   done
